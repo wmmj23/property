@@ -23,55 +23,13 @@ class DatabaseManager:
         """连接数据库"""
         try:
             self.conn = sqlite3.connect(self.db_file)
-            self.conn.row_factory =  sqlite3.Row  # 返回字典格式  #self._dict_factory
+            self.conn.row_factory = sqlite3.Row  # 返回字典格式
             self.cursor = self.conn.cursor()
             logger.info(f"数据库连接成功: {self.db_file}")
             return True
         except sqlite3.Error as e:
             logger.error(f"连接数据库失败: {e}")
             return False
-        
-    def _dict_factory(self, cursor, row):
-        """自定义行工厂函数，将行转换为字典，处理列名问题"""
-        d = {}
-        for idx, col in enumerate(cursor.description):
-            col_name = col[0]
-            value = row[idx]
-            
-            # 处理列名：如果包含点号，可能只取最后部分
-            # 例如 'm.code' -> 'code'，但 'market_code' 保持不变
-            if col_name and '.' in col_name:
-                # 对于 'table.column' 格式，我们可能需要保留完整列名
-                # 或者根据需要进行简化
-                parts = col_name.split('.')
-                if len(parts) == 2:
-                    # 如果列名是 'table.column' 格式，我们有两种选择：
-                    # 1. 保留完整列名（如 'm.code'）
-                    # 2. 使用列名（如 'code'），但可能会有冲突
-                    # 这里我们根据是否有别名来决定
-                    if parts[1] in ['code', 'name'] and parts[0] != 's':
-                        # 对于连接查询中的 m.code, m.name，我们使用别名
-                        # 但在我们的查询中，我们已经使用了 as market_code
-                        # 所以这里应该不会遇到 'm.code' 这样的列名
-                        pass
-                
-                # 简化列名：只取最后部分
-                simple_name = parts[-1]
-                
-                # 检查是否有冲突
-                if simple_name in d:
-                    # 如果有冲突，使用完整列名
-                    d[col_name] = value
-                else:
-                    d[simple_name] = value
-            else:
-                d[col_name] = value
-            
-            # 将 None 值转换为 None（而不是字符串 'None'）
-            if d.get(col_name) == 'None':
-                d[col_name] = None
-        
-        return d
     
     def close(self):
         """关闭数据库连接"""
@@ -101,11 +59,7 @@ class DatabaseManager:
     def get_all_stocks(self) -> List[Dict[str, Any]]:
         """获取所有股票信息"""
         query = """
-        SELECT s.id
-        , s.code
-        , s.name
-        , m.code as market_code
-        , m.name as market_name
+        SELECT s.id, s.code, s.name, m.code as market_code, m.name as market_name
         FROM stock s
         LEFT JOIN market m ON s.market_id = m.id
         ORDER BY s.id
@@ -115,7 +69,6 @@ class DatabaseManager:
             self.cursor.execute(query)
             stocks = []
             for row in self.cursor.fetchall():
-            
                 stocks.append(dict(row))
             
             logger.debug(f"获取到 {len(stocks)} 只股票信息")
