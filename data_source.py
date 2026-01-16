@@ -9,9 +9,10 @@ import logging
 from abc import ABC, abstractmethod
 import akshare as ak
 import sys
+import time 
 
 # 设置日志
-logging.basicConfig(level=logging.INFO)
+#logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -284,7 +285,7 @@ class AkshareDataSource(DataSource):
 
 class USStockDataSource:
     """美股数据源专用类"""
-    
+
     def __init__(self, max_retries: int = 3, retry_delay: int = 2):
         try:
             import yfinance as yf

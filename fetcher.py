@@ -1,11 +1,11 @@
 # fetcher.py
 import logging
 import time
-from typing import Tuple, List, Dict, Any
+from typing import Tuple, List, Dict, Any, Optional  # 添加了 Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from data_source import get_data_source, HybridDataSource
-from database import get_database
+from database import get_database, DatabaseManager
 from config import DECIMAL_PLACES
 
 logger = logging.getLogger(__name__)
@@ -16,37 +16,54 @@ class DataFetcher:
     
     def __init__(self, max_workers: int = 5):
         self.data_source = get_data_source()
-        self.db = get_database()
         self.max_workers = max_workers
         logger.info(f"数据获取器初始化成功，最大线程数: {max_workers}")
     
     def fetch_stock_prices(self) -> Tuple[int, int, List[Dict[str, Any]]]:
         """获取所有股票的最新收盘价"""
-        stocks = self.db.get_all_stocks()
-        success_count = 0
-        failure_count = 0
-        failed_stocks = []
+        # 在主线程中获取数据
+        db = get_database()
+        if not db.connect():
+            logger.error("无法连接数据库")
+            return 0, 0, []
         
+        try:
+            stocks = db.get_all_stocks()
+        finally:
+            db.close()
+            
         if not stocks:
             logger.warning("未找到任何股票信息")
             return 0, 0, []
         
+        success_count = 0
+        failure_count = 0
+        failed_stocks = []
+        
         print(f"\n开始获取 {len(stocks)} 只股票的收盘价...")
         logger.info(f"开始获取 {len(stocks)} 只股票的收盘价")
         
-        # 使用线程池并行获取
+        # 使用线程池并行获取数据，但每个线程使用独立的数据库连接
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             futures = {}
             for stock in stocks:
-                future = executor.submit(self._fetch_single_stock_price, stock)
+                future = executor.submit(self._fetch_single_stock_price_thread, stock)
                 futures[future] = stock
             
             for future in as_completed(futures):
                 stock = futures[future]
                 try:
-                    success = future.result()
+                    success, price, date = future.result()
                     if success:
                         success_count += 1
+                        # 在主线程中保存数据
+                        self._save_stock_data_thread_safe(
+                            stock['id'], 
+                            price, 
+                            date, 
+                            stock.get('market_code', 'SH'), #默认SH
+                            stock['code']  # 添加股票代码参数 - 这是更新部分
+                        )
                     else:
                         failure_count += 1
                         failed_stocks.append(stock)
@@ -58,9 +75,8 @@ class DataFetcher:
         logger.info(f"股票获取完成: 成功 {success_count} 只, 失败 {failure_count} 只")
         return success_count, failure_count, failed_stocks
     
-    def _fetch_single_stock_price(self, stock: Dict[str, Any]) -> bool:
-        """获取单只股票价格"""
-        stock_id = stock['id']
+    def _fetch_single_stock_price_thread(self, stock: Dict[str, Any]) -> Tuple[bool, Optional[float], Optional[str]]:
+        """在线程中获取单只股票价格"""
         code = stock['code']
         name = stock['name']
         market_code = stock.get('market_code', 'SH')
@@ -71,58 +87,166 @@ class DataFetcher:
         price, date = self.data_source.get_stock_price(code, market_code)
         
         if price is not None and date is not None:
-            if self.db.insert_stock_nav(stock_id, date, price):
+            print(f"  √ 获取成功: {date} 收盘价 {price}")
+            return True, price, date
+        else:
+            print(f"  × 获取失败: 无法获取数据")
+            return False, None, None
+    
+    def _save_stock_data_thread_safe(self, stock_id: int, price: float, date: str, market_code: str, code: str):
+        """在主线程中安全保存股票数据"""
+        db = get_database()
+        if not db.connect():
+            logger.error(f"保存股票 {code} 数据时无法连接数据库")
+            return False
+        
+        try:
+            if db.insert_stock_nav(stock_id, date, price):
                 # 如果是美股，获取详细信息
                 if market_code == "US":
-                    self._fetch_us_stock_info(stock_id, code)
-                
-                print(f"  √ 成功: {date} 收盘价 {price}")
+                    if isinstance(self.data_source, HybridDataSource):
+                        info = self.data_source.get_us_stock_info(code)
+                        if info:
+                            db.update_us_stock_info(stock_id, info)
+                            logger.debug(f"美股 {code} 详细信息已更新")
                 return True
             else:
-                print(f"  × 失败: 数据库插入失败")
+                logger.error(f"保存股票 {code} 数据失败")
                 return False
-        else:
-            print(f"  × 失败: 无法获取数据")
-            return False
+        finally:
+            db.close()
     
-    def _fetch_us_stock_info(self, stock_id: int, code: str):
-        """获取美股详细信息"""
+    def fetch_us_stocks_only(self) -> Tuple[int, int, List[Dict[str, Any]]]:
+        """仅获取美股数据"""
+        # 在主线程中获取数据
+        db = get_database()
+        if not db.connect():
+            logger.error("无法连接数据库")
+            return 0, 0, []
+        
         try:
-            if isinstance(self.data_source, HybridDataSource):
-                info = self.data_source.get_us_stock_info(code)
-                if info:
-                    self.db.update_us_stock_info(stock_id, info)
-                    logger.debug(f"美股 {code} 详细信息已更新")
-        except Exception as e:
-            logger.error(f"获取美股 {code} 信息失败: {e}")
+            us_stocks = db.get_us_stocks()
+        finally:
+            db.close()
+            
+        if not us_stocks:
+            logger.warning("未找到任何美股信息")
+            return 0, 0, []
+        
+        success_count = 0
+        failure_count = 0
+        failed_stocks = []
+        
+        print(f"\n开始获取 {len(us_stocks)} 只美股的收盘价...")
+        logger.info(f"开始获取 {len(us_stocks)} 只美股的收盘价")
+        
+        # 使用线程池并行获取数据
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            futures = {}
+            for stock in us_stocks:
+                future = executor.submit(self._fetch_single_us_stock_price_thread, stock)
+                futures[future] = stock
+            
+            for future in as_completed(futures):
+                stock = futures[future]
+                try:
+                    success, price, date = future.result()
+                    if success:
+                        success_count += 1
+                        # 在主线程中保存数据
+                        self._save_us_stock_data_thread_safe(stock['id'], price, date, stock['code'])
+                    else:
+                        failure_count += 1
+                        failed_stocks.append(stock)
+                except Exception as e:
+                    logger.error(f"获取美股 {stock.get('code')} 数据时出现异常: {e}")
+                    failure_count += 1
+                    failed_stocks.append(stock)
+        
+        logger.info(f"美股获取完成: 成功 {success_count} 只, 失败 {failure_count} 只")
+        return success_count, failure_count, failed_stocks
+    
+    def _fetch_single_us_stock_price_thread(self, stock: Dict[str, Any]) -> Tuple[bool, Optional[float], Optional[str]]:
+        """在线程中获取单只美股价格"""
+        code = stock['code']
+        name = stock['name']
+        
+        print(f"正在获取美股 {name}({code}) 的收盘价...")
+        
+        # 获取美股价格
+        price, date = self.data_source.get_stock_price(code, "US")
+        
+        if price is not None and date is not None:
+            print(f"  √ 获取成功: {date} 收盘价 ${price}")
+            return True, price, date
+        else:
+            print(f"  × 获取失败: 无法获取数据")
+            return False, None, None
+    
+    def _save_us_stock_data_thread_safe(self, stock_id: int, price: float, date: str, code: str):
+        """在主线程中安全保存美股数据"""
+        db = get_database()
+        if not db.connect():
+            logger.error(f"保存美股 {stock_id} 数据时无法连接数据库")
+            return False
+        
+        try:
+            if db.insert_stock_nav(stock_id, date, price):
+                # 获取美股详细信息
+                if isinstance(self.data_source, HybridDataSource):
+                    info = self.data_source.get_us_stock_info(code)
+                    if info:
+                        db.update_us_stock_info(stock_id, info)
+                        logger.debug(f"美股 {code} 详细信息已更新")
+                return True
+            else:
+                logger.error(f"保存美股 {stock_id} 数据失败")
+                return False
+        finally:
+            db.close()
+    
+    # ... 其他方法（fetch_fund_navs, fetch_exchange_rates等）也需要类似修改，但这里省略以保持简洁
+    # 实际上，你应该对 fetch_fund_navs 和 fetch_exchange_rates 也进行类似修改
     
     def fetch_fund_navs(self) -> Tuple[int, int, List[Dict[str, Any]]]:
         """获取所有基金的最新净值"""
-        funds = self.db.get_all_funds()
-        success_count = 0
-        failure_count = 0
-        failed_funds = []
+        # 在主线程中获取数据
+        db = get_database()
+        if not db.connect():
+            logger.error("无法连接数据库")
+            return 0, 0, []
         
+        try:
+            funds = db.get_all_funds()
+        finally:
+            db.close()
+            
         if not funds:
             logger.warning("未找到任何基金信息")
             return 0, 0, []
         
+        success_count = 0
+        failure_count = 0
+        failed_funds = []
+        
         print(f"\n开始获取 {len(funds)} 只基金的净值...")
         logger.info(f"开始获取 {len(funds)} 只基金的净值")
         
-        # 使用线程池并行获取
+        # 使用线程池并行获取数据
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             futures = {}
             for fund in funds:
-                future = executor.submit(self._fetch_single_fund_nav, fund)
+                future = executor.submit(self._fetch_single_fund_nav_thread, fund)
                 futures[future] = fund
             
             for future in as_completed(futures):
                 fund = futures[future]
                 try:
-                    success = future.result()
+                    success, nav, date = future.result()
                     if success:
                         success_count += 1
+                        # 在主线程中保存数据
+                        self._save_fund_data_thread_safe(fund['id'], nav, date)
                     else:
                         failure_count += 1
                         failed_funds.append(fund)
@@ -134,9 +258,8 @@ class DataFetcher:
         logger.info(f"基金获取完成: 成功 {success_count} 只, 失败 {failure_count} 只")
         return success_count, failure_count, failed_funds
     
-    def _fetch_single_fund_nav(self, fund: Dict[str, Any]) -> bool:
-        """获取单只基金净值"""
-        fund_id = fund['id']
+    def _fetch_single_fund_nav_thread(self, fund: Dict[str, Any]) -> Tuple[bool, Optional[float], Optional[str]]:
+        """在线程中获取单只基金净值"""
         code = fund['code']
         name = fund['name']
         
@@ -146,96 +269,109 @@ class DataFetcher:
         nav, date = self.data_source.get_fund_nav(code)
         
         if nav is not None and date is not None:
-            if self.db.insert_fund_nav(fund_id, date, nav):
-                print(f"  √ 成功: {date} 净值 {nav}")
+            print(f"  √ 获取成功: {date} 净值 {nav}")
+            return True, nav, date
+        else:
+            print(f"  × 获取失败: 无法获取数据")
+            return False, None, None
+    
+    def _save_fund_data_thread_safe(self, fund_id: int, nav: float, date: str):
+        """在主线程中安全保存基金数据"""
+        db = get_database()
+        if not db.connect():
+            logger.error(f"保存基金 {fund_id} 数据时无法连接数据库")
+            return False
+        
+        try:
+            if db.insert_fund_nav(fund_id, date, nav):
                 return True
             else:
-                print(f"  × 失败: 数据库插入失败")
+                logger.error(f"保存基金 {fund_id} 数据失败")
                 return False
-        else:
-            print(f"  × 失败: 无法获取数据")
-            return False
+        finally:
+            db.close()
     
     def fetch_exchange_rates(self) -> Tuple[int, int, List[Dict[str, Any]]]:
         """获取所有货币的最新汇率"""
-        currencies = self.db.get_all_currencies()
-        success_count = 0
-        failure_count = 0
-        failed_currencies = []
+        # 在主线程中获取数据
+        db = get_database()
+        if not db.connect():
+            logger.error("无法连接数据库")
+            return 0, 0, []
         
+        try:
+            currencies = db.get_all_currencies()
+        finally:
+            db.close()
+            
         if not currencies:
             logger.warning("未找到任何货币信息")
             return 0, 0, []
         
+        success_count = 0
+        failure_count = 0
+        failed_currencies = []
+        
         print(f"\n开始获取 {len(currencies)} 种货币的汇率...")
         logger.info(f"开始获取 {len(currencies)} 种货币的汇率")
         
-        for currency in currencies:
-            currency_id = currency['id']
-            currency_code = currency['currency']
+        # 使用线程池并行获取数据
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            futures = {}
+            for currency in currencies:
+                future = executor.submit(self._fetch_single_exchange_rate_thread, currency)
+                futures[future] = currency
             
-            print(f"正在获取 {currency_code}/CNY 的汇率...")
-            
-            rate, date = self.data_source.get_exchange_rate(currency_code)
-            
-            if rate is not None and date is not None:
-                if self.db.insert_exchange_rate(currency_id, rate, date):
-                    print(f"  √ 成功: {date} 汇率 {rate}")
-                    success_count += 1
-                else:
-                    print(f"  × 失败: 数据库插入失败")
+            for future in as_completed(futures):
+                currency = futures[future]
+                try:
+                    success, rate, date = future.result()
+                    if success:
+                        success_count += 1
+                        # 在主线程中保存数据
+                        self._save_exchange_data_thread_safe(currency['id'], rate, date)
+                    else:
+                        failure_count += 1
+                        failed_currencies.append(currency)
+                except Exception as e:
+                    logger.error(f"获取货币 {currency.get('currency')} 数据时出现异常: {e}")
                     failure_count += 1
                     failed_currencies.append(currency)
-            else:
-                print(f"  × 失败: 无法获取数据")
-                failure_count += 1
-                failed_currencies.append(currency)
         
         logger.info(f"汇率获取完成: 成功 {success_count} 种, 失败 {failure_count} 种")
         return success_count, failure_count, failed_currencies
     
-    def fetch_us_stocks_only(self) -> Tuple[int, int, List[Dict[str, Any]]]:
-        """仅获取美股数据"""
-        us_stocks = self.db.get_us_stocks()
-        success_count = 0
-        failure_count = 0
-        failed_stocks = []
+    def _fetch_single_exchange_rate_thread(self, currency: Dict[str, Any]) -> Tuple[bool, Optional[float], Optional[str]]:
+        """在线程中获取单个汇率"""
+        currency_code = currency['currency']
         
-        if not us_stocks:
-            logger.warning("未找到任何美股信息")
-            return 0, 0, []
+        print(f"正在获取 {currency_code}/CNY 的汇率...")
         
-        print(f"\n开始获取 {len(us_stocks)} 只美股的收盘价...")
-        logger.info(f"开始获取 {len(us_stocks)} 只美股的收盘价")
+        # 获取汇率
+        rate, date = self.data_source.get_exchange_rate(currency_code)
         
-        for stock in us_stocks:
-            stock_id = stock['id']
-            code = stock['code']
-            name = stock['name']
-            
-            print(f"正在获取美股 {name}({code}) 的收盘价...")
-            
-            # 获取美股价格
-            price, date = self.data_source.get_stock_price(code, "US")
-            
-            if price is not None and date is not None:
-                if self.db.insert_stock_nav(stock_id, date, price):
-                    # 获取美股详细信息
-                    self._fetch_us_stock_info(stock_id, code)
-                    
-                    print(f"  √ 成功: {date} 收盘价 ${price}")
-                    success_count += 1
-                else:
-                    print(f"  × 失败: 数据库插入失败")
-                    failure_count += 1
-                    failed_stocks.append(stock)
+        if rate is not None and date is not None:
+            print(f"  √ 获取成功: {date} 汇率 {rate}")
+            return True, rate, date
+        else:
+            print(f"  × 获取失败: 无法获取数据")
+            return False, None, None
+    
+    def _save_exchange_data_thread_safe(self, currency_id: int, rate: float, date: str):
+        """在主线程中安全保存汇率数据"""
+        db = get_database()
+        if not db.connect():
+            logger.error(f"保存货币 {currency_id} 数据时无法连接数据库")
+            return False
+        
+        try:
+            if db.insert_exchange_rate(currency_id, rate, date):
+                return True
             else:
-                print(f"  × 失败: 无法获取数据")
-                failure_count += 1
-                failed_stocks.append(stock)
-        
-        logger.info(f"美股获取完成: 成功 {success_count} 只, 失败 {failure_count} 只")
-        return success_count, failure_count, failed_stocks
+                logger.error(f"保存货币 {currency_id} 数据失败")
+                return False
+        finally:
+            db.close()
     
     def fetch_all_data(self) -> Dict[str, Any]:
         """一键获取所有数据"""
@@ -247,10 +383,15 @@ class DataFetcher:
         
         # 1. 备份数据库
         print("\n1. 备份数据库...")
-        if self.db.backup():
-            print("  √ 数据库备份成功")
+        db = get_database()
+        if db.connect():
+            if db.backup():
+                print("  √ 数据库备份成功")
+            else:
+                print("  × 数据库备份失败，继续执行...")
+            db.close()
         else:
-            print("  × 数据库备份失败，继续执行...")
+            print("  × 无法连接数据库，跳过备份...")
         
         # 2. 获取股票数据
         print("\n2. 获取股票最新收盘价...")

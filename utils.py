@@ -250,7 +250,7 @@ def setup_logging(log_level: str = "INFO"):
         level=level,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
-            logging.FileHandler(LOG_DIR / f"app_{get_timestamp()}.log"),
+            logging.FileHandler(LOG_DIR / f"app_{get_timestamp()}.log", encoding='utf-8'),
             logging.StreamHandler(sys.stdout)
         ]
     )

@@ -197,7 +197,7 @@ class DatabaseManager:
             """
             self.cursor.execute(check_query, (stock_id, date))
             if self.cursor.fetchone():
-                logger.debug(f"股票 {stock_id} 在 {date} 的数据已存在，跳过")
+                logger.info(f"股票 {stock_id} 在 {date} 的数据已存在，跳过")
                 return False
             
             insert_query = """
@@ -442,6 +442,23 @@ class DatabaseManager:
             return dict(row) if row else None
         except sqlite3.Error as e:
             logger.error(f"查询货币失败: {e}")
+            return None
+    
+    def get_stock_by_id(self, stock_id: int) -> Optional[Dict[str, Any]]:
+        """根据ID获取股票信息"""
+        query = """
+        SELECT s.*, m.code as market_code, m.name as market_name
+        FROM stock s
+        LEFT JOIN market m ON s.market_id = m.id
+        WHERE s.id = ?
+        """
+        
+        try:
+            self.cursor.execute(query, (stock_id,))
+            row = self.cursor.fetchone()
+            return dict(row) if row else None
+        except sqlite3.Error as e:
+            logger.error(f"查询股票失败: {e}")
             return None
 
 # 全局数据库实例
