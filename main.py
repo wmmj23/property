@@ -14,7 +14,10 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from utils import setup_logging, print_header, print_error
 from config import LOG_LEVEL
-from menu import MenuSystem
+#旧menu
+#from menu import MenuSystem
+#新menu
+from menu2 import MenuSystem
 
 
 def check_dependencies():
@@ -104,6 +107,8 @@ def main():
     try:
         menu_system = MenuSystem()
         menu_system.run()
+
+
     except KeyboardInterrupt:
         print("\n\n程序被用户中断")
     except Exception as e:
