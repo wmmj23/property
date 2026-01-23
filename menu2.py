@@ -13,6 +13,7 @@ from menu_functions import (
     fetch_us_stocks, fetch_all_data, view_stock_info,
     view_fund_info, view_exchange_info, database_management
 )
+from data_sources.data_source_manager import get_data_source_manager
 
 logger = logging.getLogger(__name__)
 
@@ -43,18 +44,36 @@ class MenuSystem:
         
         print("\n" + "-" * 40)
     
+    def ask_for_us_data_source(self, function_name: str) -> bool:
+        """询问用户选择美股数据源"""
+        print(f"\n{function_name} - 选择美股数据源")
+        print("-" * 40)
+        
+        data_source_manager = get_data_source_manager()
+        return data_source_manager.select_us_data_source_interactive()
+    
     def handle_choice(self, choice: str):
         """处理用户选择"""
         if choice == "1":
-            fetch_stock_prices.main(self.db)
+            # 获取股票数据前先询问美股数据源
+            if self.ask_for_us_data_source("获取股票最新收盘价"):
+                fetch_stock_prices.main(self.db)
         elif choice == "2":
-            fetch_fund_navs.main(self.db)
+            # 获取基金数据前先询问美股数据源
+            if self.ask_for_us_data_source("获取基金最新净值"):
+                fetch_fund_navs.main(self.db)
         elif choice == "3":
-            fetch_exchange_rates.main(self.db)
+            # 获取汇率数据前先询问美股数据源
+            if self.ask_for_us_data_source("获取最新汇率"):
+                fetch_exchange_rates.main(self.db)
         elif choice == "4":
-            fetch_us_stocks.main(self.db)
+            # 获取美股数据前先询问美股数据源
+            if self.ask_for_us_data_source("获取美股数据"):
+                fetch_us_stocks.main(self.db)
         elif choice == "5":
-            fetch_all_data.main(self.db)
+            # 一键更新所有数据前先询问美股数据源
+            if self.ask_for_us_data_source("一键更新所有数据"):
+                fetch_all_data.main(self.db)
         elif choice == "6":
             view_stock_info.main(self.db)
         elif choice == "7":

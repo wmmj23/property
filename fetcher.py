@@ -4,9 +4,11 @@ import time
 from typing import Tuple, List, Dict, Any, Optional  # 添加了 Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from data_source import get_data_source, HybridDataSource
-from database import get_database, DatabaseManager
+#from data_source import get_data_source, HybridDataSource
+from database import get_database
 from config import DECIMAL_PLACES
+from data_sources import get_data_source 
+
 
 logger = logging.getLogger(__name__)
 
@@ -14,8 +16,8 @@ logger = logging.getLogger(__name__)
 class DataFetcher:
     """数据获取功能类"""
     
-    def __init__(self, max_workers: int = 5):
-        self.data_source = get_data_source()
+    def __init__(self, max_workers: int = 1):
+        self.data_source = get_data_source()  # 获取数据源管理器
         self.max_workers = max_workers
         logger.info(f"数据获取器初始化成功，最大线程数: {max_workers}")
     
@@ -83,7 +85,7 @@ class DataFetcher:
         
         print(f"正在获取 {name}({code}) [{market_code}] 的收盘价...")
         
-        # 获取股票价格
+        # 获取股票价格 - 使用数据源管理器
         price, date = self.data_source.get_stock_price(code, market_code)
         
         if price is not None and date is not None:
@@ -97,21 +99,20 @@ class DataFetcher:
         """在主线程中安全保存股票数据"""
         db = get_database()
         if not db.connect():
-            logger.error(f"保存股票 {code} 数据时无法连接数据库")
+            logger.error(f"保存股票 {stock_id}， {code} 数据时无法连接数据库")
             return False
         
         try:
             if db.insert_stock_nav(stock_id, date, price):
                 # 如果是美股，获取详细信息
-                if market_code == "US":
-                    if isinstance(self.data_source, HybridDataSource):
-                        info = self.data_source.get_us_stock_info(code)
-                        if info:
-                            db.update_us_stock_info(stock_id, info)
-                            logger.debug(f"美股 {code} 详细信息已更新")
+                # if market_code == "US":
+                #     info = self.data_source.get_us_stock_info(code)
+                #     if info:
+                #         db.update_us_stock_info(stock_id, info)
+                #         logger.debug(f"美股 {code} 详细信息已更新")
                 return True
             else:
-                logger.error(f"保存股票 {code} 数据失败")
+                logger.error(f"保存股票 {stock_id}， {code} 数据失败")
                 return False
         finally:
             db.close()
@@ -141,7 +142,7 @@ class DataFetcher:
         logger.info(f"开始获取 {len(us_stocks)} 只美股的收盘价")
         
         # 使用线程池并行获取数据
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+        with ThreadPoolExecutor(max_workers=min(2, self.max_workers)) as executor:  # 美股最多使用2个线程
             futures = {}
             for stock in us_stocks:
                 future = executor.submit(self._fetch_single_us_stock_price_thread, stock)
@@ -193,11 +194,10 @@ class DataFetcher:
         try:
             if db.insert_stock_nav(stock_id, date, price):
                 # 获取美股详细信息
-                if isinstance(self.data_source, HybridDataSource):
-                    info = self.data_source.get_us_stock_info(code)
-                    if info:
-                        db.update_us_stock_info(stock_id, info)
-                        logger.debug(f"美股 {code} 详细信息已更新")
+                info = self.data_source.get_us_stock_info(code)
+                if info:
+                    db.update_us_stock_info(stock_id, info)
+                    logger.debug(f"美股 {code} 详细信息已更新")
                 return True
             else:
                 logger.error(f"保存美股 {stock_id} 数据失败")
@@ -205,8 +205,7 @@ class DataFetcher:
         finally:
             db.close()
     
-    # ... 其他方法（fetch_fund_navs, fetch_exchange_rates等）也需要类似修改，但这里省略以保持简洁
-    # 实际上，你应该对 fetch_fund_navs 和 fetch_exchange_rates 也进行类似修改
+    # fetch_exchange_rates也需要类似修改
     
     def fetch_fund_navs(self) -> Tuple[int, int, List[Dict[str, Any]]]:
         """获取所有基金的最新净值"""
@@ -262,11 +261,12 @@ class DataFetcher:
         """在线程中获取单只基金净值"""
         code = fund['code']
         name = fund['name']
+        market_code = fund.get('market_code', None)  # 获取市场代码
         
         print(f"正在获取 {name}({code}) 的净值...")
         
-        # 获取基金净值
-        nav, date = self.data_source.get_fund_nav(code)
+        # 获取基金净值 - 传递市场代码
+        nav, date = self.data_source.get_fund_nav(code, market_code)
         
         if nav is not None and date is not None:
             print(f"  √ 获取成功: {date} 净值 {nav}")

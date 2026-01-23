@@ -149,8 +149,9 @@ class DatabaseManager:
     def get_all_funds(self) -> List[Dict[str, Any]]:
         """获取所有基金信息"""
         query = """
-        SELECT f.id, f.code, f.name
+        SELECT f.id, f.code, f.name, m.code as market_code
         FROM fund f
+        LEFT JOIN market m ON f.market_id = m.id
         ORDER BY f.id
         """
         

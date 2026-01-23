@@ -286,17 +286,32 @@ class AkshareDataSource(DataSource):
 class USStockDataSource:
     """美股数据源专用类"""
 
-    def __init__(self, max_retries: int = 3, retry_delay: int = 2):
+    def __init__(self, max_retries: int = 5, retry_delay: int = 5):
         try:
             import yfinance as yf
             self.yf = yf
             self.max_retries = max_retries
             self.retry_delay = retry_delay
+            self.request_delay = 1  # 请求之间的延迟（秒）
+            self.last_request_time = 0  # 记录上次请求时间
             logger.info("美股数据源初始化成功（使用 yfinance）")
         except ImportError:
             logger.error("请先安装 yfinance 库: pip install yfinance")
             logger.info("尝试使用备选数据源...")
             self.yf = None
+    
+    def _throttle_request(self):
+        """请求限流，避免请求过于频繁"""
+        import time
+        current_time = time.time()
+        time_since_last = current_time - self.last_request_time
+        
+        if time_since_last < self.request_delay:
+            sleep_time = self.request_delay - time_since_last
+            logger.debug(f"请求限流，等待 {sleep_time:.2f} 秒")
+            time.sleep(sleep_time)
+        
+        self.last_request_time = time.time()
     
     def get_us_stock_price(self, code: str) -> Tuple[Optional[float], Optional[str]]:
         """获取美股最新收盘价和日期"""
@@ -306,10 +321,14 @@ class USStockDataSource:
                     logger.error("yfinance 未安装，无法获取美股数据")
                     return None, None
                 
+                # 请求限流
+                self._throttle_request()
+                
                 # 创建ticker对象
                 ticker = self.yf.Ticker(code)
                 
                 # 获取历史数据（最近10天）
+                import pandas as pd
                 end_date = datetime.now()
                 start_date = end_date - timedelta(days=30)  # 获取30天数据确保有交易日
                 
@@ -319,6 +338,10 @@ class USStockDataSource:
                     logger.warning(f"未找到美股 {code} 的历史数据")
                     # 尝试使用更长时间范围
                     start_date = end_date - timedelta(days=365)
+                    
+                    # 再次请求限流
+                    self._throttle_request()
+                    
                     hist = ticker.history(start=start_date, end=end_date, auto_adjust=False)
                 
                 if not hist.empty:
@@ -361,7 +384,20 @@ class USStockDataSource:
                     return None, None
                     
             except Exception as e:
+                error_msg = str(e).lower()
+                
+                # 处理特定错误
+                if "too many requests" in error_msg or "rate limit" in error_msg:
+                    wait_time = self.retry_delay * (attempt + 1)  # 指数退避
+                    logger.warning(f"美股 {code}请求频率过高，等待 {wait_time} 秒后重试 (尝试 {attempt+1}/{self.max_retries})")
+                    time.sleep(wait_time)
+                    continue
+                elif "not found" in error_msg or "does not exist" in error_msg:
+                    logger.error(f"美股 {code} 不存在")
+                    return None, None
+                
                 logger.error(f"获取美股 {code} 数据时出错 (尝试 {attempt+1}/{self.max_retries}): {e}")
+                
                 if attempt < self.max_retries - 1:
                     time.sleep(self.retry_delay)
                 else:

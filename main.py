@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 os.environ['PYTHONIOENCODING'] = 'utf-8'
 
+
 from utils import setup_logging, print_header, print_error
 from config import LOG_LEVEL
 #旧menu
