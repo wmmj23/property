@@ -315,47 +315,47 @@ class DataFetcher:
         print(f"\n开始获取 {len(currencies)} 种货币的汇率...")
         logger.info(f"开始获取 {len(currencies)} 种货币的汇率")
         
-        # 使用线程池并行获取数据
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            futures = {}
-            for currency in currencies:
-                future = executor.submit(self._fetch_single_exchange_rate_thread, currency)
-                futures[future] = currency
+       # 获取币种列表
+        currency_codes = [currency['currency'] for currency in currencies]
+        
+        # 批量获取汇率数据
+        try:
+            print("批量获取汇率数据中...")
+            batch_results = self.data_source.get_exchange_rates_batch(currency_codes)
             
-            for future in as_completed(futures):
-                currency = futures[future]
-                try:
-                    success, rate, date = future.result()
-                    if success:
+            if not batch_results:
+                logger.warning("批量获取汇率失败，回退到逐个获取")
+                # 如果批量获取失败，使用原来的逐个获取方式
+                return self._fetch_exchange_rates_individually(currencies)
+            
+            # 处理批量获取的结果
+            for currency in currencies:
+                currency_code = currency['currency']
+                
+                if currency_code in batch_results:
+                    rate, date = batch_results[currency_code]
+                    
+                    if rate is not None and date is not None:
                         success_count += 1
+                        print(f"  √ 获取成功 {currency_code}/CNY: {date} 汇率 {rate}")
                         # 在主线程中保存数据
                         self._save_exchange_data_thread_safe(currency['id'], rate, date)
                     else:
                         failure_count += 1
                         failed_currencies.append(currency)
-                except Exception as e:
-                    logger.error(f"获取货币 {currency.get('currency')} 数据时出现异常: {e}")
+                        print(f"  × 获取失败 {currency_code}/CNY: 无法获取数据")
+                else:
                     failure_count += 1
                     failed_currencies.append(currency)
-        
+                    print(f"  × 获取失败 {currency_code}/CNY: 数据源未返回该币种")
+                    
+        except Exception as e:
+            logger.error(f"批量获取汇率时出现异常，回退到逐个获取: {e}")
+            # 如果批量获取失败，使用原来的逐个获取方式
+            return self._fetch_exchange_rates_individually(currencies)
+
         logger.info(f"汇率获取完成: 成功 {success_count} 种, 失败 {failure_count} 种")
         return success_count, failure_count, failed_currencies
-    
-    def _fetch_single_exchange_rate_thread(self, currency: Dict[str, Any]) -> Tuple[bool, Optional[float], Optional[str]]:
-        """在线程中获取单个汇率"""
-        currency_code = currency['currency']
-        
-        print(f"正在获取 {currency_code}/CNY 的汇率...")
-        
-        # 获取汇率
-        rate, date = self.data_source.get_exchange_rate(currency_code)
-        
-        if rate is not None and date is not None:
-            print(f"  √ 获取成功: {date} 汇率 {rate}")
-            return True, rate, date
-        else:
-            print(f"  × 获取失败: 无法获取数据")
-            return False, None, None
     
     def _save_exchange_data_thread_safe(self, currency_id: int, rate: float, date: str):
         """在主线程中安全保存汇率数据"""

@@ -1,7 +1,7 @@
 # akshare_data_source.py
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, List, Dict
 import sys
 
 # 使用相对导入
@@ -70,6 +70,45 @@ class AkshareDataSource(DataSource):
         except Exception as e:
             logger.error(f"获取汇率数据时出错: {e}")
             return None, None
+        
+    # 在 AkshareDataSource 类中添加一个新的方法
+    def get_exchange_rates_batch(self, currencies: List[str]) -> Dict[str, Tuple[Optional[float], Optional[str]]]:
+        """批量获取汇率数据"""
+        try:
+            df = self.ak.currency_boc_safe()
+            if df is None or df.empty:
+                logger.warning("网络问题获取不到汇率数据")
+                return {}
+            
+            result = {}
+            latest = df.iloc[-1]
+            date = latest['日期'].strftime('%Y-%m-%d')
+            
+            # 映射币种代码到对应的列名
+            currency_mapping = {
+                "USD": "美元",
+                "HKD": "港元",
+                # 可以根据需要添加更多币种映射
+            }
+            
+            for currency in currencies:
+                if currency in currency_mapping:
+                    column_name = currency_mapping[currency]
+                    try:
+                        rate = round(float(latest[column_name] / 100), 4)
+                        result[currency] = (rate, date)
+                        logger.debug(f"获取 {currency} 汇率成功: {date} 汇率 {rate}")
+                    except (KeyError, ValueError) as e:
+                        logger.warning(f"无法获取 {currency} 的汇率: {e}")
+                        result[currency] = (None, None)
+                else:
+                    logger.warning(f"不支持的币种: {currency}")
+                    result[currency] = (None, None)
+            
+            return result
+        except Exception as e:
+            logger.error(f"批量获取汇率数据时出错: {e}")
+            return {}
     
     # 私有方法
     def _get_a_stock_price(self, code: str, market_code: str) -> Tuple[Optional[float], Optional[str]]:

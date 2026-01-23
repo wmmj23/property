@@ -17,10 +17,8 @@ os.environ['PYTHONIOENCODING'] = 'utf-8'
 
 from utils import setup_logging, print_header, print_error
 from config import LOG_LEVEL
-#旧menu
-#from menu import MenuSystem
-#新menu
-from menu2 import MenuSystem
+
+from menu import MenuSystem
 
 
 def check_dependencies():

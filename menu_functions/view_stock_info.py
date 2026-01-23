@@ -113,12 +113,11 @@ def main(db=None):
     """主函数，可以独立运行"""
     if db is None:
         db = get_database()
-        if not db.connect():
+    if not db.connect():
             print_error("无法连接数据库，请检查数据库文件")
             return
-        close_db = True
-    else:
-        close_db = False
+    close_db = True
+    
     
     try:
         view_stock_info_function(db)

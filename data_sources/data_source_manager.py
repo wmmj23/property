@@ -146,28 +146,27 @@ class DataSourceManager:
         logger.warning(f"没有找到适合市场 {market_code} 的数据源")
         return None, None
     
-    def get_exchange_rate(self, currency: str) -> Tuple[Optional[float], Optional[str]]:
-        """获取汇率（优先使用Akshare）"""
-        data_source = self.data_sources.get(DataSourceType.AKSHARE)
-        if data_source:
-            rate, date = data_source.get_exchange_rate(currency)
-            if rate is not None:
-                return rate, date
+    def get_exchange_rates_batch(self, currencies: List[str]) -> Dict[str, Tuple[Optional[float], Optional[str]]]:
+        """批量获取汇率"""
+        # 优先使用Akshare批量获取
+        akshare_source = self.data_sources.get(DataSourceType.AKSHARE)
+        if akshare_source and hasattr(akshare_source, 'get_exchange_rates_batch'):
+            try:
+                result = akshare_source.get_exchange_rates_batch(currencies)
+                # 检查是否所有币种都获取成功
+                if result and any(rate[0] is not None for rate in result.values()):
+                    return result
+            except Exception as e:
+                logger.warning(f"Akshare批量获取汇率失败: {e}")
         
-        # 如果没有Akshare，尝试其他数据源
-        for source_type, source in self.data_sources.items():
-            if source_type != DataSourceType.AKSHARE:
-                try:
-                    rate, date = source.get_exchange_rate(currency)
-                    if rate is not None:
-                        return rate, date
-                except Exception as e:
-                    logger.debug(f"数据源 {source_type} 获取汇率失败: {e}")
-                    continue
+        # 如果批量获取失败，回退到逐个获取
+        result = {}
+        for currency in currencies:
+            rate, date = self.get_exchange_rate(currency)
+            result[currency] = (rate, date)
         
-        logger.warning(f"没有可用的汇率数据源")
-        return None, None
-    
+        return result
+
     def _guess_market_from_code(self, code: str) -> str:
         """根据代码猜测市场"""
         if not code:

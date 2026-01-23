@@ -30,12 +30,10 @@ def main(db=None):
     # 如果db没有传入，则创建新的连接
     if db is None:
         db = get_database()
-        if not db.connect():
+    if not db.connect():
             print_error("无法连接数据库，请检查数据库文件")
             return
-        close_db = True
-    else:
-        close_db = False
+    close_db = True
     
     try:
         fetcher = DataFetcher()
