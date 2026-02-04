@@ -2,16 +2,33 @@
 import logging
 from typing import Optional, List, Dict, Any
 
+
+import logging
+from typing import Optional, List, Dict, Any
+
 from utils import (
     clear_screen, print_header, print_success, 
-    print_error, print_warning, print_info,
-    get_user_choice, confirm_action
+    print_error, print_info,
+    confirm_action
 )
 from database import get_database
-from menu_functions import (
-    fetch_stock_prices, fetch_fund_navs, fetch_exchange_rates,
-    fetch_us_stocks, fetch_all_data, view_stock_info,
-    view_fund_info, view_exchange_info, database_management
+
+from menu_functions.fetch_stock_prices import main as fetch_stock_prices
+from menu_functions.fetch_fund_navs import main as fetch_fund_navs
+from menu_functions.fetch_exchange_rates import main as fetch_exchange_rates
+from menu_functions.fetch_us_stocks import main as fetch_us_stocks
+from menu_functions.fetch_all_data import main as fetch_all_data
+from menu_functions.view_stock_info import main as view_stock_info
+from menu_functions.view_fund_info import main as view_fund_info
+from menu_functions.view_exchange_info import main as view_exchange_info
+from menu_functions.database_management import main as database_management
+from menu_functions.insert_data import (
+    insert_stock_info,
+    insert_fund_info,
+    insert_stock_transaction_info,
+    insert_fund_transaction_info,
+    insert_stock_nav_info,
+    insert_fund_nav_info
 )
 from data_sources.data_source_manager import get_data_source_manager
 
@@ -34,7 +51,8 @@ class MenuSystem:
         print("\n请选择功能:")
         print("1. 更新数据")
         print("2. 查询数据")
-        print("3. 参数设置")
+        print("3. 插入数据")
+        print("9. 参数设置")
         print("0. 退出程序")
         
         print("\n" + "-" * 40)
@@ -67,6 +85,22 @@ class MenuSystem:
         
         print("\n" + "-" * 40)
     
+    def display_insert_menu(self):
+        """显示插入数据菜单"""
+        clear_screen()
+        print_header("插入数据")
+
+        print("\n请选择插入操作:")
+        print("1. 插入股票信息")
+        print("2. 插入基金信息")
+        print("3. 插入股票交易记录")
+        print("4. 插入基金交易记录")
+        print("5. 插入股票净值")
+        print("6. 插入基金净值")
+        print("0. 返回主菜单")
+
+        print("\n" + "-" * 40)
+
     def display_settings_menu(self):
         """显示参数设置菜单"""
         clear_screen()
@@ -93,6 +127,8 @@ class MenuSystem:
         elif choice == "2":
             self.current_menu = "query"
         elif choice == "3":
+            self.current_menu = "insert"
+        elif choice == "9":
             self.current_menu = "settings"
         elif choice == "0":
             self.exit_program()
@@ -141,6 +177,27 @@ class MenuSystem:
         else:
             print_error("无效的选择")
             input("\n按回车键继续...")
+
+    def handle_insert_menu_choice(self, choice: str):
+        """处理插入数据菜单选择"""
+        if choice == "1":
+            insert_stock_info(self.db)
+        elif choice == "2":
+            insert_fund_info(self.db)
+        elif choice == "3":
+            insert_stock_transaction_info(self.db)
+        elif choice == "4":
+            insert_fund_transaction_info(self.db)
+        elif choice == "5":
+            insert_stock_nav_info(self.db)
+        elif choice == "6":
+            insert_fund_nav_info(self.db)
+        elif choice == "0":
+            self.current_menu = "main"
+        else:
+            print_error("无效的选择")
+            input("\n按回车键继续...")
+    
     
     def handle_settings_menu_choice(self, choice: str):
         """处理参数设置菜单选择"""
@@ -160,6 +217,8 @@ class MenuSystem:
             self.handle_update_menu_choice(choice)
         elif self.current_menu == "query":
             self.handle_query_menu_choice(choice)
+        elif self.current_menu == "insert":
+            self.handle_insert_menu_choice(choice)
         elif self.current_menu == "settings":
             self.handle_settings_menu_choice(choice)
     
@@ -191,6 +250,8 @@ class MenuSystem:
                     self.display_update_menu()
                 elif self.current_menu == "query":
                     self.display_query_menu()
+                elif self.current_menu == "insert":
+                    self.display_insert_menu()
                 elif self.current_menu == "settings":
                     self.display_settings_menu()
                 
@@ -201,6 +262,8 @@ class MenuSystem:
                     choice = input("请选择更新选项 (0-5): ").strip()
                 elif self.current_menu == "query":
                     choice = input("请选择查询选项 (0-3): ").strip()
+                elif self.current_menu == "insert":
+                    choice = input("请选择插入选项 (0-6): ").strip()
                 elif self.current_menu == "settings":
                     choice = input("请选择设置选项 (0-1): ").strip()
                 

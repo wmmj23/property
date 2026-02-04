@@ -2,7 +2,7 @@
 import logging
 from database import get_database
 from fetcher import DataFetcher
-from utils import print_header, confirm_action, print_error, print_warning, print_info
+from utils import print_header, confirm_action, print_error
 
 logger = logging.getLogger(__name__)
 

@@ -461,7 +461,74 @@ class DatabaseManager:
         except sqlite3.Error as e:
             logger.error(f"查询股票失败: {e}")
             return None
-
+        
+    def execute_query(self, query: str, params: tuple = ()) -> List[Dict[str, Any]]:
+        """执行查询并返回结果列表（每个结果是一个字典）"""
+        try:
+            self.cursor.execute(query, params)
+            rows = self.cursor.fetchall()
+            results = []
+            for row in rows:
+                results.append(dict(row))
+            logger.debug(f"执行查询成功: {query}, 返回 {len(results)} 条记录")
+            return results
+        except sqlite3.Error as e:
+            logger.error(f"执行查询失败: {e}, 查询: {query}")
+            return []
+        
+    def execute_update(self, query: str, params: tuple = ()) -> bool:
+        """执行更新操作（INSERT, UPDATE, DELETE）"""
+        try:
+            self.cursor.execute(query, params)
+            self.conn.commit()
+            logger.debug(f"执行更新成功: {query}")
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"执行更新失败: {e}, 查询: {query}")
+            self.conn.rollback()
+            return False
+    
+    def get_all_markets(self):
+        """获取所有市场"""
+        return self.execute_query("SELECT * FROM market ORDER BY code")
+    
+    def get_all_currencies(self):
+        """获取所有货币"""
+        return self.execute_query("SELECT * FROM foreign_exchange ORDER BY currency")
+    
+    def get_all_four_type_money(self):
+        """获取所有资金类型"""
+        return self.execute_query("SELECT * FROM four_type_money ORDER BY name")
+    
+    def get_all_class_assets(self):
+        """获取所有资产类别"""
+        return self.execute_query("SELECT * FROM class_assets ORDER BY code")
+    
+    def get_all_type_assets(self):
+        """获取所有资产类型"""
+        return self.execute_query("SELECT * FROM type_assets ORDER BY name")
+    
+    def get_all_accounts(self):
+        """获取所有账户"""
+        return self.execute_query("SELECT * FROM account ORDER BY name")
+    
+    def get_all_transaction_types(self):
+        """获取所有交易类型"""
+        return self.execute_query("SELECT * FROM type_transaction ORDER BY name")
+    
+    def get_all_stocks(self):
+        """获取所有股票"""
+        return self.execute_query("SELECT * FROM stock ORDER BY code")
+    
+    def get_all_funds(self):
+        """获取所有基金"""
+        return self.execute_query("SELECT * FROM fund ORDER BY code")
+    
+    def get_last_insert_id(self):
+        """获取最后插入的ID"""
+        result = self.execute_query("SELECT last_insert_rowid() as id")
+        return result[0]['id'] if result else None
+    
 # 全局数据库实例
 _db_instance = None
 

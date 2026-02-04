@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 # df = ak.fund_open_fund_daily_em()
 # print(df)
 
-# fund_open_fund_info_em_df = ak.fund_open_fund_info_em(symbol="563900", indicator="单位净值走势", period="1月")
+# fund_open_fund_info_em_df = ak.fund_open_fund_info_em(symbol="501210", indicator="单位净值走势", period="1月")
 # print(fund_open_fund_info_em_df)
 
 # currency = "HKD"
@@ -38,16 +38,16 @@ from datetime import datetime, timedelta
 # print(rate)
 # print(date)
 
-yesterday = (datetime.now() - timedelta(days=7)).strftime('%Y%m%d')
-today = datetime.now().strftime('%Y%m%d')
-df = ak.stock_zh_a_hist(
-    symbol='002407', 
-    period="daily", 
-    start_date=yesterday,
-    end_date=today,
-    adjust="qfq"
-)
-print(df)
+# yesterday = (datetime.now() - timedelta(days=7)).strftime('%Y%m%d')
+# today = datetime.now().strftime('%Y%m%d')
+# df = ak.stock_zh_a_hist(
+#     symbol='002407', 
+#     period="daily", 
+#     start_date=yesterday,
+#     end_date=today,
+#     adjust="qfq"
+# )
+# print(df)
 
 
 

@@ -1,3 +1,4 @@
+# menu_functions/__init__.py
 from .fetch_stock_prices import main as fetch_stock_prices_main
 from .fetch_fund_navs import main as fetch_fund_navs_main
 from .fetch_exchange_rates import main as fetch_exchange_rates_main
@@ -7,6 +8,14 @@ from .view_stock_info import main as view_stock_info_main
 from .view_fund_info import main as view_fund_info_main
 from .view_exchange_info import main as view_exchange_info_main
 from .database_management import main as database_management_main
+from .insert_data import (
+    insert_stock_info,
+    insert_fund_info,
+    insert_stock_transaction_info,
+    insert_fund_transaction_info,
+    insert_stock_nav_info,
+    insert_fund_nav_info
+)
 
 # 提供别名以便向后兼容
 fetch_stock_prices = fetch_stock_prices_main
@@ -28,5 +37,11 @@ __all__ = [
     'view_stock_info',
     'view_fund_info',
     'view_exchange_info',
-    'database_management'
+    'database_management',
+    'insert_stock_info',
+    'insert_fund_info',
+    'insert_stock_transaction_info',
+    'insert_fund_transaction_info',
+    'insert_stock_nav_info',
+    'insert_fund_nav_info'
 ]
